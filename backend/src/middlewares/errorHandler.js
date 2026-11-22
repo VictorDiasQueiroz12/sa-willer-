@@ -10,6 +10,9 @@ export const errorHandler = (err, _req, res, _next) => {
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'JSON malformado' });
   }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Corpo da requisição excede 10 KB' });
+  }
   if (err.code === 'P2002') {
     return res.status(409).json({ error: 'Registro já existe' });
   }

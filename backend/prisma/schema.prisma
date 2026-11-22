@@ -2,7 +2,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Para PostgreSQL/MySQL basta trocar o provider e a DATABASE_URL (veja o README).
+// O índice parcial e os gatilhos de integridade estão na migração SQL.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")

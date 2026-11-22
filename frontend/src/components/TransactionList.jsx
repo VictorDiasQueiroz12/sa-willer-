@@ -1,9 +1,9 @@
 import { formatDate, formatDateTime, formatMoney } from '../format.js';
 
-export default function TransactionList({ data, isAdmin, onEdit, onDelete, onRestore, page, onPage }) {
+export default function TransactionList({ data, isAdmin, onEdit, onDelete, onRestore, page, onPage, locked }) {
   if (!data) return <p className="empty">Carregando lançamentos…</p>;
   if (data.items.length === 0) {
-    return <p className="empty">Nenhum lançamento por aqui. Adicione o primeiro ao lado.</p>;
+    return <p className="empty">Nenhum lançamento encontrado. Ajuste os filtros ou cadastre um novo.</p>;
   }
 
   return (
@@ -24,22 +24,22 @@ export default function TransactionList({ data, isAdmin, onEdit, onDelete, onRes
               </div>
 
               <p className={`tx-amount ${tx.type === 'INCOME' ? 'pos' : 'neg'}`}>
-                {tx.type === 'INCOME' ? '+' : '−'} {formatMoney(tx.amount)}
+                {tx.type === 'INCOME' ? '+' : '−'} {formatMoney(tx.amountCents)}
               </p>
 
               <div className="tx-actions">
                 {deleted ? (
                   isAdmin && (
-                    <button className="btn small" onClick={() => onRestore(tx)}>
+                    <button className="btn small" disabled={locked} onClick={() => onRestore(tx)}>
                       Restaurar
                     </button>
                   )
                 ) : (
                   <>
-                    <button className="btn small" onClick={() => onEdit(tx)}>
+                    <button className="btn small" disabled={locked} onClick={() => onEdit(tx)}>
                       Editar
                     </button>
-                    <button className="btn small danger" onClick={() => onDelete(tx)}>
+                    <button className="btn small danger" disabled={locked} onClick={() => onDelete(tx)}>
                       Excluir
                     </button>
                   </>

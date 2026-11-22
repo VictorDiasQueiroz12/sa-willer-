@@ -11,6 +11,10 @@ export const app = express();
 
 app.use(helmet());
 app.use(cors({ origin: env.corsOrigin }));
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use(express.json({ limit: '10kb' }));
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));

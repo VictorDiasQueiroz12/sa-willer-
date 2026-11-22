@@ -12,7 +12,7 @@ export const setUnauthorizedHandler = (fn) => {
   onUnauthorized = fn;
 };
 
-async function request(path, { method = 'GET', body } = {}) {
+async function request(path, { method = 'GET', body, signal } = {}) {
   const token = tokenStore.get();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -20,6 +20,7 @@ async function request(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
+    signal,
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -28,7 +29,7 @@ async function request(path, { method = 'GET', body } = {}) {
 
   if (!res.ok) {
     // Token expirado/inválido em uma rota protegida: encerra a sessão.
-    if (res.status === 401 && token) onUnauthorized();
+    if (res.status === 401 && token && token === tokenStore.get()) onUnauthorized();
     const error = new Error(data?.error || 'Erro inesperado. Tente novamente.');
     error.details = data?.details;
     throw error;
@@ -37,7 +38,7 @@ async function request(path, { method = 'GET', body } = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
+  get: (path, signal) => request(path, { signal }),
   post: (path, body) => request(path, { method: 'POST', body }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   del: (path) => request(path, { method: 'DELETE' }),

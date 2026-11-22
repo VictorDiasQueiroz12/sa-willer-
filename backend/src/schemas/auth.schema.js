@@ -5,7 +5,7 @@ const email = z.string().trim().toLowerCase().email('E-mail inválido').max(120)
 const password = z
   .string()
   .min(8, 'A senha deve ter no mínimo 8 caracteres')
-  .max(72, 'A senha deve ter no máximo 72 caracteres')
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= 72, 'A senha deve ter no máximo 72 bytes')
   .regex(/[A-Za-z]/, 'A senha deve conter ao menos uma letra')
   .regex(/\d/, 'A senha deve conter ao menos um número');
 

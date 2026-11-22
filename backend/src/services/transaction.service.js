@@ -6,8 +6,7 @@ const isAdmin = (user) => user.role === 'ADMIN';
 export const toPublic = (t) => ({
   id: t.id,
   description: t.description,
-  amount: Number(t.amountCents) / 100,
-  amountCents: Number(t.amountCents),
+  amountCents: t.amountCents.toString(),
   type: t.type,
   category: t.category,
   date: t.date,
@@ -26,8 +25,8 @@ const snapshot = (t) => JSON.stringify(toPublic(t));
 const ownerFilter = (user, scope = 'all') =>
   isAdmin(user) && scope === 'all' ? {} : { createdById: user.id };
 
-async function findAccessible(user, id, { deleted = false } = {}) {
-  const tx = await prisma.transaction.findFirst({
+async function findAccessible(db, user, id, { deleted = false } = {}) {
+  const tx = await db.transaction.findFirst({
     where: { id, ...ownerFilter(user), deletedAt: deleted ? { not: null } : null },
   });
   // 404 (e não 403) evita revelar a existência de transações de outros usuários.
@@ -35,31 +34,35 @@ async function findAccessible(user, id, { deleted = false } = {}) {
   return tx;
 }
 
-/** Bloqueia lançamentos duplicados (mesmo dono, descrição, valor, tipo e data). */
-async function assertNotDuplicate(data, ownerId, ignoreId) {
-  const duplicate = await prisma.transaction.findFirst({
-    where: {
-      createdById: ownerId,
-      description: data.description,
-      amountCents: BigInt(data.amountCents),
-      type: data.type,
-      date: data.date,
-      deletedAt: null,
-      ...(ignoreId ? { NOT: { id: ignoreId } } : {}),
-    },
-    select: { id: true },
-  });
-  if (duplicate) {
-    throw new AppError(409, `Lançamento duplicado (já existe a transação #${duplicate.id})`);
+async function writeTransaction(operation) {
+  try {
+    return await prisma.$transaction(operation);
+  } catch (error) {
+    if (error.code === 'P2002') {
+      throw new AppError(409, 'Já existe um lançamento ativo com a mesma descrição, valor, tipo e data');
+    }
+    if (error.code === 'P2034' || error.code === 'P1008') {
+      throw new AppError(409, 'Outra operação está em andamento. Atualize a lista e tente novamente.');
+    }
+    throw error;
   }
 }
+
+const transactionFields = ({ description, amountCents, type, category, date }) => ({
+  description, amountCents: BigInt(amountCents), type, category: category || null, date,
+});
+
+const startOfNextDay = (date) => new Date(date.getTime() + 86_400_000);
 
 export async function list(user, query) {
   const where = { ...ownerFilter(user, query.scope) };
   if (!(isAdmin(user) && query.includeDeleted)) where.deletedAt = null;
   if (query.type) where.type = query.type;
   if (query.from || query.to) {
-    where.date = { ...(query.from && { gte: query.from }), ...(query.to && { lte: query.to }) };
+    where.date = {
+      ...(query.from && { gte: query.from }),
+      ...(query.to && { lt: startOfNextDay(query.to) }),
+    };
   }
 
   const [items, total] = await prisma.$transaction([
@@ -83,7 +86,7 @@ export async function list(user, query) {
 }
 
 export async function getById(user, id) {
-  const tx = await findAccessible(user, id);
+  const tx = await findAccessible(prisma, user, id);
   return toPublic(tx);
 }
 
@@ -93,32 +96,23 @@ export async function balance(user, scope) {
     where: { ...ownerFilter(user, scope), deletedAt: null },
     _sum: { amountCents: true },
   });
-  const sumOf = (type) => Number(groups.find((g) => g.type === type)?._sum.amountCents ?? 0n);
+  const sumOf = (type) => groups.find((g) => g.type === type)?._sum.amountCents ?? 0n;
 
   const incomeCents = sumOf('INCOME');
   const expenseCents = sumOf('EXPENSE');
   return {
-    income: incomeCents / 100,
-    expense: expenseCents / 100,
-    balance: (incomeCents - expenseCents) / 100,
+    incomeCents: incomeCents.toString(),
+    expenseCents: expenseCents.toString(),
+    balanceCents: (incomeCents - expenseCents).toString(),
     currency: 'BRL',
     scope: isAdmin(user) ? scope : 'mine',
   };
 }
 
 export async function create(user, data) {
-  await assertNotDuplicate(data, user.id);
-
-  const created = await prisma.$transaction(async (db) => {
+  const created = await writeTransaction(async (db) => {
     const tx = await db.transaction.create({
-      data: {
-        description: data.description,
-        amountCents: BigInt(data.amountCents),
-        type: data.type,
-        category: data.category ?? null,
-        date: data.date,
-        createdById: user.id,
-      },
+      data: { ...transactionFields(data), createdById: user.id },
     });
     await db.auditLog.create({
       data: { action: 'CREATE', transactionId: tx.id, userId: user.id, after: snapshot(tx) },
@@ -129,20 +123,11 @@ export async function create(user, data) {
 }
 
 export async function update(user, id, data) {
-  const before = await findAccessible(user, id);
-  await assertNotDuplicate(data, before.createdById, id);
-
-  const updated = await prisma.$transaction(async (db) => {
+  const updated = await writeTransaction(async (db) => {
+    const before = await findAccessible(db, user, id);
     const tx = await db.transaction.update({
       where: { id },
-      data: {
-        description: data.description,
-        amountCents: BigInt(data.amountCents),
-        type: data.type,
-        category: data.category ?? null,
-        date: data.date,
-        updatedById: user.id,
-      },
+      data: { ...transactionFields(data), updatedById: user.id },
     });
     await db.auditLog.create({
       data: {
@@ -160,12 +145,11 @@ export async function update(user, id, data) {
 
 /** Soft delete: marca como excluído; o registro permanece no banco para rastreabilidade. */
 export async function softDelete(user, id) {
-  const before = await findAccessible(user, id);
-
-  await prisma.$transaction(async (db) => {
+  await writeTransaction(async (db) => {
+    const before = await findAccessible(db, user, id);
     const tx = await db.transaction.update({
       where: { id },
-      data: { deletedAt: new Date(), deletedById: user.id },
+      data: { deletedAt: new Date(), deletedById: user.id, updatedById: user.id },
     });
     await db.auditLog.create({
       data: {
@@ -180,9 +164,8 @@ export async function softDelete(user, id) {
 }
 
 export async function restore(user, id) {
-  const before = await findAccessible(user, id, { deleted: true });
-
-  const restored = await prisma.$transaction(async (db) => {
+  const restored = await writeTransaction(async (db) => {
+    const before = await findAccessible(db, user, id, { deleted: true });
     const tx = await db.transaction.update({
       where: { id },
       data: { deletedAt: null, deletedById: null, updatedById: user.id },
@@ -201,6 +184,13 @@ export async function restore(user, id) {
   return toPublic(restored);
 }
 
+function parseSnapshot(value) {
+  if (!value) return null;
+  // Snapshots antigos usavam centavos numéricos; preserve o log gravado e normalize a resposta.
+  const { amount: _legacyAmount, ...snapshot } = JSON.parse(value);
+  return { ...snapshot, amountCents: String(snapshot.amountCents) };
+}
+
 export async function listAudit({ page, limit, transactionId }) {
   const where = transactionId ? { transactionId } : {};
   const [items, total] = await prisma.$transaction([
@@ -217,8 +207,8 @@ export async function listAudit({ page, limit, transactionId }) {
   return {
     items: items.map((log) => ({
       ...log,
-      before: log.before ? JSON.parse(log.before) : null,
-      after: log.after ? JSON.parse(log.after) : null,
+      before: parseSnapshot(log.before),
+      after: parseSnapshot(log.after),
     })),
     page,
     limit,

@@ -16,12 +16,13 @@
 | Agilidade | Ecossistema npm maduro (Express, Prisma, Zod, JWT) permite entregar autenticação, validação e persistência rapidamente. |
 | Concorrência e I/O | O Node.js trata muitas requisições simultâneas de I/O (consultas ao banco, chamadas HTTP) com baixo consumo de recursos, perfil típico de uma API de CRUD. |
 | Segurança e integridade | Zod valida cada entrada na fronteira da API; Prisma usa consultas parametrizadas (previne SQL Injection); JWT + bcrypt cobrem autenticação e autorização por perfil. |
-| Evolução | Prisma permite trocar SQLite por PostgreSQL/MySQL alterando o provider, sem reescrever consultas. |
+| Evolução | A camada de serviços isola o acesso ao banco. Uma migração para PostgreSQL exige novas migrações, adaptação dos gatilhos/índices e testes de concorrência. |
 
 ## Decisões técnicas relacionadas às regras de negócio
 
-- **Valores em centavos inteiros (BigInt):** o tipo `Number` do JavaScript é ponto flutuante (`0.1 + 0.2 ≠ 0.3`). Guardar centavos elimina erros de arredondamento.
+- **Valores em centavos inteiros (BigInt):** o tipo `Number` do JavaScript é ponto flutuante (`0.1 + 0.2 ≠ 0.3`). O banco calcula o saldo com inteiros; API e interface preservam os centavos até a formatação em reais.
 - **Soft delete + AuditLog:** atendem a Regra de Ouro (nenhuma exclusão física) e dão rastreabilidade de quem fez o quê e quando.
+- **Índice único parcial:** rejeita duplicatas ativas mesmo sob concorrência, sem bloquear o uso da mesma chave após exclusão lógica. A restauração precisa satisfazer a mesma regra.
 - **Camadas (rotas → validação → serviços → banco):** separam responsabilidades e facilitam testes e manutenção (Clean Code).
 - **Operação e auditoria na mesma transação de banco:** impedem inconsistência entre o dado e seu histórico.
 
@@ -29,3 +30,5 @@
 
 - JavaScript é dinamicamente tipado; a mitigação é a validação de esquemas em runtime (Zod). Migrar para TypeScript é a evolução natural do projeto.
 - Node.js não é ideal para processamento CPU-intensivo; caso a SafeCash precise de cálculos pesados (ex.: motores de risco), esses módulos podem virar serviços separados.
+- SQLite simplifica a demonstração, mas serializa gravações. Para alto volume, avalie PostgreSQL, backups, monitoramento e testes de carga.
+- Este é um protótipo acadêmico. Antes de hospedar dados reais, revise políticas de acesso e sessão (o token do protótipo fica no `localStorage`), HTTPS, gestão de segredos, recuperação e auditoria externa.
