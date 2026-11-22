@@ -2,6 +2,8 @@
 
 Sistema de tesouraria para registrar entradas e saídas em reais, acompanhar o saldo e consultar o histórico de alterações. Projeto da Situação de Aprendizagem do prof. Willer Barros.
 
+[Assistir à demonstração existente (PDF com link para o vídeo)](FinTech_Flow_Apresentacao.pdf)
+
 ## Executar localmente
 
 Pré-requisitos: **Node.js 22.12+** (22 ou 24 LTS), npm e Git. O SQLite é local: não é preciso executar um servidor de banco.
@@ -57,6 +59,8 @@ Pare a API e faça um backup do arquivo SQLite antes de `npm run db:deploy`. A n
 ## API REST
 
 Base local: `http://localhost:3333/api`. Rotas protegidas usam `Authorization: Bearer <token>`.
+
+- [Swagger UI](http://localhost:3333/api/docs/) e [contrato OpenAPI](docs/openapi.json). Para testar rotas protegidas no Swagger, faça login pela API e use o JWT no botão **Authorize**.
 
 | Método e rota | Acesso | Entrada / comportamento |
 | --- | --- | --- |
@@ -121,7 +125,11 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-A suíte de integração cria um SQLite temporário e não usa o banco de desenvolvimento. O GitHub Actions executa os testes e o build em pushes e pull requests.
+A suíte de integração e a suíte E2E usam bancos SQLite temporários. O GitHub Actions executa testes, build e uma verificação da imagem de produção em pushes e pull requests.
 
+- [Requisitos e matriz de permissões](docs/REQUISITOS.md)
 - [Cronograma de sprints e roteiro de demonstração](docs/CRONOGRAMA_SPRINTS.md)
+- [Modelo de quadro Trello](docs/QUADRO_TRELLO.md)
+- [Estratégia de testes, homologação e benchmark](docs/QUALIDADE.md)
+- [Deploy e handover](docs/DEPLOY_E_HANDOVER.md)
 - [Justificativa da stack e limitações](docs/JUSTIFICATIVA_STACK.md)

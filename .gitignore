@@ -1,6 +1,11 @@
 node_modules/
 .env
+.env.deploy
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 dist/
+playwright-report/
+test-results/
 .DS_Store

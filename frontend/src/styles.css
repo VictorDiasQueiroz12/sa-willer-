@@ -62,6 +62,10 @@ input:focus, select:focus { border-color: var(--action); }
   background: #e2f5ee; border: 1px solid #bedfd0; color: #125849;
   border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.9rem;
 }
+.feedback-notice { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.feedback-dialog { width: min(30rem, calc(100% - 2rem)); color: var(--ink); }
+.feedback-dialog::backdrop { background: rgba(20, 45, 49, 0.42); }
+.feedback-dialog p { margin: 0.6rem 0 1rem; }
 
 /* ---------- Login ---------- */
 .login {
@@ -84,7 +88,7 @@ input:focus, select:focus { border-color: var(--action); }
   display: flex; justify-content: space-between; align-items: center; gap: 1rem;
   flex-wrap: wrap;
 }
-.brand { font-weight: 800; letter-spacing: -0.02em; font-size: 1.1rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 800; letter-spacing: -0.02em; font-size: 1.1rem; }
 .who { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; }
 .badge {
   font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px;

@@ -66,6 +66,26 @@ after(async () => {
 const entry = { description: 'Pagamento de aluguel', amount: '2000,01', type: 'EXPENSE', date: '2026-02-28' };
 const transactions = '/transactions';
 
+test('publica o contrato OpenAPI com JWT e referências internas válidas', async () => {
+  const { status, data } = await request('GET', '/openapi.json');
+  assert.equal(status, 200);
+  assert.equal(data.openapi, '3.0.3');
+  assert.equal(data.components.securitySchemes.bearerAuth.bearerFormat, 'JWT');
+  assert.ok(data.paths['/transactions/{id}'].put);
+  assert.ok(data.paths['/transactions/monthly'].get);
+
+  function checkRefs(value) {
+    if (!value || typeof value !== 'object') return;
+    if (typeof value.$ref === 'string') {
+      assert.ok(value.$ref.startsWith('#/'));
+      const target = value.$ref.slice(2).split('/').reduce((node, key) => node?.[key], data);
+      assert.ok(target, `Referência inválida: ${value.$ref}`);
+    }
+    for (const child of Object.values(value)) checkRefs(child);
+  }
+  checkRefs(data);
+});
+
 test('valida valor absoluto, data real e ordem cronológica dos filtros', async () => {
   assert.equal((await request('GET', transactions)).status, 401);
   for (const patch of [{ amount: '-1' }, { amount: '1,001' }, { date: null }, { date: '2026-02-29' }]) {
@@ -153,6 +173,20 @@ test('grava apenas uma cópia concorrente e não audita edição rejeitada', asy
   }
 });
 
+test('aceita gravações concorrentes distintas sem perder lançamentos ou auditoria', async () => {
+  const responses = await Promise.all(
+    Array.from({ length: 8 }, (_, index) => request('POST', transactions, {
+      ...user,
+      body: { ...entry, date: '2030-01-01', description: `Saída concorrente ${index}` },
+    })),
+  );
+  for (const result of responses) {
+    assert.equal(result.status, 201, JSON.stringify(result.data));
+    const audit = await request('GET', `/admin/audit?transactionId=${result.data.id}`, admin);
+    assert.deepEqual(audit.data.items.map((log) => log.action), ['CREATE']);
+  }
+});
+
 test('busca em descrição ou categoria e exporta o recorte completo com proteção de texto CSV', async () => {
   const body = {
     ...entry, date: '2027-01-03', category: 'Mídia; digital', description: '=1+1; plano "B"', amount: '10.01',
@@ -193,8 +227,12 @@ test('resume somente lançamentos ativos do mês e ranqueia categorias por total
     { description: 'Virada', amount: '300.00', type: 'INCOME', date: '2028-01-01' },
     { description: 'Pagamento removido', amount: '900.00', category: 'Serviços' },
   ];
-  const created = await Promise.all(rows.map((row) => request('POST', transactions, { ...user, body: { ...sample, ...row } })));
-  for (const result of created) assert.equal(result.status, 201);
+  const created = [];
+  for (const row of rows) {
+    const result = await request('POST', transactions, { ...user, body: { ...sample, ...row } });
+    assert.equal(result.status, 201);
+    created.push(result);
+  }
   assert.equal((await request('DELETE', `${transactions}/${created.at(-1).data.id}`, user)).status, 204);
   assert.equal((await request('POST', transactions, { ...outsider, body: { ...sample, amount: '9000', category: 'Outros' } })).status, 201);
   assert.equal((await request('GET', `${transactions}/monthly?month=2027-13`, user)).status, 400);

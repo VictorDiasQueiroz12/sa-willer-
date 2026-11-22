@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { formatMoney } from '../format.js';
 
-export default function BalanceSummary({ balance }) {
+export default memo(function BalanceSummary({ balance }) {
   if (!balance) return <section className="balance" aria-busy="true">Aguardando dados do saldo…</section>;
 
   const income = BigInt(balance.incomeCents);
@@ -33,4 +34,4 @@ export default function BalanceSummary({ balance }) {
       </div>
     </section>
   );
-}
+});

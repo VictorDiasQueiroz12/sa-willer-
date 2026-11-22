@@ -37,3 +37,42 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm --prefix backend ci
+      - run: npm --prefix backend run db:generate
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm --prefix frontend run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: frontend/test-results/
+          if-no-files-found: ignore
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t fintech-flow:ci .
+      - name: Verificar aplicativo e Swagger na imagem
+        run: |
+          export JWT_SECRET="$(openssl rand -hex 48)"
+          docker run -d --name fintech-flow-ci -p 127.0.0.1:3333:3333 -e JWT_SECRET fintech-flow:ci
+          trap 'docker logs fintech-flow-ci; docker rm -f fintech-flow-ci' EXIT
+          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:3333/api/health
+          curl -fsS http://127.0.0.1:3333/ | grep -q 'FinTech Flow'
+          curl -fsS http://127.0.0.1:3333/api/openapi.json | jq -e '.openapi == "3.0.3"'

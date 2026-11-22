@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { todayInput } from '../format.js';
+import { ActionErrorDialog, SuccessNotice } from './ActionFeedback.jsx';
 import AuditLog from './AuditLog.jsx';
 import BalanceSummary from './BalanceSummary.jsx';
 import MonthlyReport from './MonthlyReport.jsx';
@@ -19,6 +20,9 @@ function filterParams(filters, scope, isAdmin) {
   if (isAdmin && filters.includeDeleted) query.set('includeDeleted', 'true');
   return query;
 }
+
+const sameBalance = (previous, next) =>
+  previous && Object.keys(next).every((field) => previous[field] === next[field]);
 
 function saveCsv(blob) {
   const url = URL.createObjectURL(blob);
@@ -67,14 +71,16 @@ export default function Dashboard() {
       const { signal } = request;
       try {
         const [list, bal] = await Promise.all([
-          api.get(`/transactions?${query}`, signal),
+          tab === 'transactions' ? api.get(`/transactions?${query}`, signal) : null,
           api.get(`/transactions/balance?scope=${scope}`, signal),
         ]);
         if (signal.aborted) return;
-        const lastPage = Math.max(list.totalPages, 1);
-        if (page > lastPage) setPage(lastPage);
-        else setData(list);
-        setBalance(bal);
+        if (list) {
+          const lastPage = Math.max(list.totalPages, 1);
+          if (page > lastPage) setPage(lastPage);
+          else setData(list);
+        }
+        setBalance((previous) => sameBalance(previous, bal) ? previous : bal);
         setLoadError(null);
       } catch (err) {
         if (!signal.aborted) setLoadError(err);
@@ -86,7 +92,7 @@ export default function Dashboard() {
       clearInterval(timer);
       request?.abort();
     };
-  }, [page, filters, scope, isAdmin, revision]);
+  }, [page, filters, scope, isAdmin, revision, tab]);
 
   useEffect(() => () => exportRequest.current?.abort(), []);
 
@@ -145,7 +151,7 @@ export default function Dashboard() {
   return (
     <>
       <header className="topbar">
-        <strong className="brand">FinTech Flow</strong>
+        <strong className="brand"><img src="/logo.svg" width="28" height="28" alt="" />FinTech Flow</strong>
         <div className="who">
           <span>
             {user.name} <span className={`badge ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'Usuário'}</span>
@@ -185,12 +191,8 @@ export default function Dashboard() {
             <button className="btn small" onClick={refresh}>Tentar novamente</button>
           </div>
         )}
-        {actionError && (
-          <div className="alert" role="alert">
-            {actionError.message}
-          </div>
-        )}
-        {notice && <p className="notice" role="status">{notice}</p>}
+        {actionError && <ActionErrorDialog message={actionError.message} onClose={() => setActionError(null)} />}
+        {notice && <SuccessNotice message={notice} onClose={() => setNotice('')} />}
 
         <nav className="tabs" aria-label="Seções da tesouraria">
           <button aria-pressed={tab === 'transactions'} disabled={locked} onClick={() => setTab('transactions')}>

@@ -42,7 +42,7 @@ async function writeTransaction(operation) {
     if (error.code === 'P2002') {
       throw new AppError(409, 'Já existe um lançamento ativo com a mesma descrição, valor, tipo e data');
     }
-    if (error.code === 'P2034' || error.code === 'P1008') {
+    if (['P2034', 'P1008', 'P2024', 'P2028'].includes(error.code)) {
       throw new AppError(409, 'Outra operação está em andamento. Atualize a lista e tente novamente.');
     }
     throw error;

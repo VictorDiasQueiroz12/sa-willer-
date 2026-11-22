@@ -1,6 +1,6 @@
 # Cronograma de Sprints — FinTech Flow
 
-Copie as tarefas abaixo para o **GitHub Projects** ou **Trello** (colunas: *Backlog · Em andamento · Em revisão · Concluído*). Ajuste as datas ao calendário da turma; cada sprint sugerida tem 1 semana.
+Use o [modelo de cartões e evidências para o Trello](QUADRO_TRELLO.md) (colunas: *Backlog · Em andamento · Em revisão · Concluído*). Ajuste as datas ao calendário da turma; cada sprint sugerida tem 1 semana.
 
 | Sprint | Objetivo | Tarefas | Evidência (Habilidade) |
 |---|---|---|---|
