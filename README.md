@@ -2,7 +2,9 @@
 
 Sistema de tesouraria para registrar entradas e saídas em reais, acompanhar o saldo e consultar o histórico de alterações. Projeto da Situação de Aprendizagem do prof. Willer Barros.
 
-[Assistir à demonstração existente (PDF com link para o vídeo)](FinTech_Flow_Apresentacao.pdf)
+**[Acessar a demonstração online](https://sa-willer.onrender.com)** · [Assistir ao vídeo (link no PDF)](FinTech_Flow_Apresentacao.pdf)
+
+A demonstração roda no Render Free e pode demorar para abrir após ficar inativa. Use apenas dados fictícios: o banco da demonstração é temporário.
 
 ## Executar localmente
 
