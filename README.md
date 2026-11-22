@@ -47,6 +47,8 @@ Pare a API e faça um backup do arquivo SQLite antes de `npm run db:deploy`. A n
 ## Regras de negócio
 
 - **Saldo = entradas − saídas**, incluindo apenas lançamentos ativos. A lista pode ser filtrada por período e tipo sem alterar o saldo. O painel busca novos dados após operações locais e a cada 10 segundos.
+- **Busca e exportação:** encontre lançamentos pela descrição ou pela categoria, combine com os filtros e baixe o CSV do resultado inteiro, não só da página aberta.
+- **Resumo mensal:** escolha um mês para ver entradas, saídas, resultado, contagem de lançamentos ativos e as cinco maiores categorias de despesa. O resumo respeita a visão selecionada e não usa os filtros da lista.
 - **Centavos inteiros:** os valores de entrada são positivos; o tipo define se é entrada ou saída. O banco usa `BigInt` e a API responde com centavos em strings para não arredondar os totais.
 - **Sem duplicatas ativas:** índice único parcial no SQLite por proprietário, descrição (após remover espaços nas pontas, sensível a maiúsculas), valor, tipo e data. A regra também vale ao editar ou restaurar; uma operação conflitante retorna `409`.
 - **Sem exclusão física:** a exclusão marca autor e horário. A alteração e seu evento de auditoria são gravados juntos; gatilhos bloqueiam `DELETE` de transações e `UPDATE`/`DELETE` de eventos. Os logs registram usuário, horário e estado antes/depois, conforme a operação.
@@ -62,8 +64,10 @@ Base local: `http://localhost:3333/api`. Rotas protegidas usam `Authorization: B
 | `POST /auth/register` | Público | `name`, `email`, `password`; cria conta `USER` e retorna `user`/`token` (`201`) |
 | `POST /auth/login` | Público | `email`, `password`; retorna `user`/`token` |
 | `GET /auth/me` | Autenticado | Usuário da sessão |
-| `GET /transactions` | Autenticado | Filtros: `type`, `from`, `to` (inclusivos), `scope=all\|mine`, `includeDeleted=true\|false` (só admin), `page`, `limit` |
+| `GET /transactions` | Autenticado | Filtros: `q` (trecho da descrição ou categoria), `type`, `from`, `to` (inclusivos), `scope=all\|mine`, `includeDeleted=true\|false` (só admin), `page`, `limit` |
 | `GET /transactions/balance` | Autenticado | `scope=all\|mine`; usuários comuns recebem sempre `mine` |
+| `GET /transactions/monthly` | Autenticado | `month=AAAA-MM` e `scope=all\|mine`; retorna totais em centavos, `count` e `topExpenses` (até cinco categorias) |
+| `GET /transactions/export` | Autenticado | Mesmos filtros da listagem, sem paginação; CSV UTF-8 separado por `;` (até 10.000 itens, senão `422`) |
 | `GET /transactions/:id` | Autenticado | Detalhes do lançamento ativo acessível |
 | `POST /transactions` | Autenticado | Cria lançamento (`201`) |
 | `PUT /transactions/:id` | Autenticado | Substitui descrição, valor, tipo, categoria e data |
@@ -85,7 +89,7 @@ Exemplo de corpo para `POST` ou `PUT` de transação:
 }
 ```
 
-`amount` aceita ponto ou vírgula decimal, até duas casas e sem separador de milhares. `category` pode ser omitida ou `null`; o tipo aceita `INCOME` ou `EXPENSE`. Datas de lançamento e filtros usam `AAAA-MM-DD`. A resposta de lançamento traz `amountCents` (no exemplo, `"200000"`), não `amount`. Exemplo de resposta de saldo:
+`amount` aceita ponto ou vírgula decimal, até duas casas e sem separador de milhares. No formulário, pode-se digitar ou colar `10.000,00` (ou `R$ 10.000,00`): a interface formata e normaliza antes de enviar. `category` pode ser omitida ou `null`; o tipo aceita `INCOME` ou `EXPENSE`. Datas de lançamento e filtros usam `AAAA-MM-DD`. A resposta de lançamento traz `amountCents` (no exemplo, `"200000"`), não `amount`. Exemplo de resposta de saldo:
 
 ```json
 {

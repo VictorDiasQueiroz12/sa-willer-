@@ -12,7 +12,7 @@ export const setUnauthorizedHandler = (fn) => {
   onUnauthorized = fn;
 };
 
-async function request(path, { method = 'GET', body, signal } = {}) {
+async function request(path, { method = 'GET', body, signal, download = false } = {}) {
   const token = tokenStore.get();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -25,6 +25,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   });
 
   if (res.status === 204) return null;
+  if (res.ok && download) return res.blob();
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
@@ -39,6 +40,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 
 export const api = {
   get: (path, signal) => request(path, { signal }),
+  download: (path, signal) => request(path, { signal, download: true }),
   post: (path, body) => request(path, { method: 'POST', body }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   del: (path) => request(path, { method: 'DELETE' }),

@@ -3,8 +3,10 @@ import { authenticate, authorize } from '../middlewares/auth.js';
 import { validate } from '../middlewares/validate.js';
 import {
   balanceQuerySchema,
+  exportQuerySchema,
   idParamSchema,
   listQuerySchema,
+  monthlyQuerySchema,
   transactionBodySchema,
 } from '../schemas/transaction.schema.js';
 import * as service from '../services/transaction.service.js';
@@ -19,11 +21,26 @@ router.get(
   asyncHandler(async (req, res) => res.json(await service.list(req.user, req.query))),
 );
 
-// Deve vir antes de "/:id" para não ser interpretada como um id.
+// As rotas nomeadas vêm antes de "/:id".
 router.get(
   '/balance',
   validate(balanceQuerySchema, 'query'),
   asyncHandler(async (req, res) => res.json(await service.balance(req.user, req.query.scope))),
+);
+
+router.get(
+  '/monthly',
+  validate(monthlyQuerySchema, 'query'),
+  asyncHandler(async (req, res) => res.json(await service.monthlyReport(req.user, req.query))),
+);
+
+router.get(
+  '/export',
+  validate(exportQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    const csv = await service.exportCsv(req.user, req.query);
+    res.attachment('fintech-flow-lancamentos.csv').type('text/csv').send(csv);
+  }),
 );
 
 router.get(

@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../utils/AppError.js';
+import { transactionsCsv } from '../utils/csv.js';
 
 const isAdmin = (user) => user.role === 'ADMIN';
 
@@ -54,22 +55,35 @@ const transactionFields = ({ description, amountCents, type, category, date }) =
 
 const startOfNextDay = (date) => new Date(date.getTime() + 86_400_000);
 
-export async function list(user, query) {
+const newestFirst = [{ date: 'desc' }, { id: 'desc' }];
+const creatorName = { createdBy: { select: { name: true } } };
+
+function transactionFilter(user, query) {
   const where = { ...ownerFilter(user, query.scope) };
   if (!(isAdmin(user) && query.includeDeleted)) where.deletedAt = null;
   if (query.type) where.type = query.type;
+  if (query.q) {
+    where.OR = [
+      { description: { contains: query.q } },
+      { category: { contains: query.q } },
+    ];
+  }
   if (query.from || query.to) {
     where.date = {
       ...(query.from && { gte: query.from }),
       ...(query.to && { lt: startOfNextDay(query.to) }),
     };
   }
+  return where;
+}
 
+export async function list(user, query) {
+  const where = transactionFilter(user, query);
   const [items, total] = await prisma.$transaction([
     prisma.transaction.findMany({
       where,
-      include: { createdBy: { select: { name: true } } },
-      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      include: creatorName,
+      orderBy: newestFirst,
       skip: (query.page - 1) * query.limit,
       take: query.limit,
     }),
@@ -85,6 +99,21 @@ export async function list(user, query) {
   };
 }
 
+const EXPORT_LIMIT = 10_000;
+
+export async function exportCsv(user, query) {
+  const items = await prisma.transaction.findMany({
+    where: transactionFilter(user, query),
+    include: creatorName,
+    orderBy: newestFirst,
+    take: EXPORT_LIMIT + 1,
+  });
+  if (items.length > EXPORT_LIMIT) {
+    throw new AppError(422, 'O CSV aceita até 10.000 lançamentos. Reduza o período ou aplique mais filtros.');
+  }
+  return transactionsCsv(items);
+}
+
 export async function getById(user, id) {
   const tx = await findAccessible(prisma, user, id);
   return toPublic(tx);
@@ -96,16 +125,51 @@ export async function balance(user, scope) {
     where: { ...ownerFilter(user, scope), deletedAt: null },
     _sum: { amountCents: true },
   });
-  const sumOf = (type) => groups.find((g) => g.type === type)?._sum.amountCents ?? 0n;
+  return { ...summarize(groups), currency: 'BRL', scope: isAdmin(user) ? scope : 'mine' };
+}
 
+function summarize(groups) {
+  const sumOf = (type) => groups.find((g) => g.type === type)?._sum.amountCents ?? 0n;
   const incomeCents = sumOf('INCOME');
   const expenseCents = sumOf('EXPENSE');
   return {
     incomeCents: incomeCents.toString(),
     expenseCents: expenseCents.toString(),
     balanceCents: (incomeCents - expenseCents).toString(),
-    currency: 'BRL',
+  };
+}
+
+export async function monthlyReport(user, { scope, month }) {
+  const start = new Date(`${month}-01T00:00:00.000Z`);
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  const where = { ...ownerFilter(user, scope), deletedAt: null, date: { gte: start, lt: end } };
+
+  const [totals, categories] = await prisma.$transaction([
+    prisma.transaction.groupBy({
+      by: ['type'],
+      where,
+      _sum: { amountCents: true },
+      _count: { _all: true },
+    }),
+    prisma.transaction.groupBy({
+      by: ['category'],
+      where: { ...where, type: 'EXPENSE' },
+      _sum: { amountCents: true },
+      orderBy: [{ _sum: { amountCents: 'desc' } }, { category: 'asc' }],
+      take: 5,
+    }),
+  ]);
+
+  return {
+    month,
     scope: isAdmin(user) ? scope : 'mine',
+    ...summarize(totals),
+    count: totals.reduce((sum, group) => sum + group._count._all, 0),
+    topExpenses: categories.map((group) => ({
+      category: group.category,
+      amountCents: group._sum.amountCents.toString(),
+    })),
   };
 }
 

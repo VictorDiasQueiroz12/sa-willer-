@@ -152,3 +152,71 @@ test('grava apenas uma cópia concorrente e não audita edição rejeitada', asy
       .map((log) => log.action), ['CREATE']);
   }
 });
+
+test('busca em descrição ou categoria e exporta o recorte completo com proteção de texto CSV', async () => {
+  const body = {
+    ...entry, date: '2027-01-03', category: 'Mídia; digital', description: '=1+1; plano "B"', amount: '10.01',
+  };
+  const first = await request('POST', transactions, { ...user, body });
+  const second = await request('POST', transactions, { ...user, body: { ...body, description: 'Outro anúncio' } });
+  const privateTx = await request('POST', transactions, { ...outsider, body: { ...body, description: 'Privado do outro' } });
+  for (const response of [first, second, privateTx]) assert.equal(response.status, 201);
+
+  const byDescription = await request('GET', `${transactions}?q=PLANO`, user);
+  assert.deepEqual(byDescription.data.items.map((item) => item.id), [first.data.id]);
+  const query = new URLSearchParams({ q: 'Mídia; digital', from: '2027-01-01', limit: '1', scope: 'all' });
+  const filtered = await request('GET', `${transactions}?${query}`, user);
+  assert.equal(filtered.data.total, 2);
+  assert.equal(filtered.data.items.length, 1);
+
+  const csvResponse = await fetch(`${base}${transactions}/export?${query}`, {
+    headers: { Authorization: `Bearer ${user.token}` },
+  });
+  assert.equal(csvResponse.status, 200);
+  assert.match(csvResponse.headers.get('content-type'), /^text\/csv/);
+  assert.match(csvResponse.headers.get('content-disposition'), /attachment.*\.csv/);
+  const raw = Buffer.from(await csvResponse.arrayBuffer());
+  assert.deepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  const csv = raw.toString('utf8');
+  assert.ok(csv.includes(`2027-01-03;"'=1+1; plano ""B""";"Mídia; digital";Saída;10,01;Ativo`));
+  assert.match(csv, /Outro anúncio/);
+  assert.doesNotMatch(csv, /Privado do outro/);
+});
+
+test('resume somente lançamentos ativos do mês e ranqueia categorias por total de saídas', async () => {
+  const sample = { ...entry, date: '2027-12-31' };
+  const rows = [
+    { description: 'Aluguel de dezembro', amount: '8000.01', category: 'Moradia' },
+    { description: 'Condomínio', amount: '200.00', category: 'Moradia' },
+    { description: 'Sem classificação', amount: '100.00' },
+    { description: 'Cliente', amount: '10000.00', type: 'INCOME' },
+    { description: 'Virada', amount: '300.00', type: 'INCOME', date: '2028-01-01' },
+    { description: 'Pagamento removido', amount: '900.00', category: 'Serviços' },
+  ];
+  const created = await Promise.all(rows.map((row) => request('POST', transactions, { ...user, body: { ...sample, ...row } })));
+  for (const result of created) assert.equal(result.status, 201);
+  assert.equal((await request('DELETE', `${transactions}/${created.at(-1).data.id}`, user)).status, 204);
+  assert.equal((await request('POST', transactions, { ...outsider, body: { ...sample, amount: '9000', category: 'Outros' } })).status, 201);
+  assert.equal((await request('GET', `${transactions}/monthly?month=2027-13`, user)).status, 400);
+
+  const path = `${transactions}/monthly?month=2027-12`;
+  const mine = await request('GET', `${path}&scope=all`, user);
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.data, {
+    month: '2027-12',
+    scope: 'mine',
+    incomeCents: '1000000',
+    expenseCents: '830001',
+    balanceCents: '169999',
+    count: 4,
+    topExpenses: [
+      { category: 'Moradia', amountCents: '820001' },
+      { category: null, amountCents: '10000' },
+    ],
+  });
+  const all = (await request('GET', `${path}&scope=all`, admin)).data;
+  assert.equal(all.balanceCents, '-730001');
+  assert.equal(all.topExpenses[0].category, 'Outros');
+  assert.equal((await request('GET', `${path}&scope=mine`, admin)).data.count, 0);
+  assert.equal((await request('GET', `${transactions}/monthly?month=2028-01`, user)).data.balanceCents, '30000');
+});

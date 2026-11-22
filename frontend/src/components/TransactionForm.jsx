@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { toInputAmount, toInputDate, todayInput } from '../format.js';
+import { parseInputAmount, toInputAmount, toInputDate, todayInput } from '../format.js';
 
 const emptyForm = () => ({
   description: '',
@@ -11,22 +11,18 @@ const emptyForm = () => ({
 });
 
 export default function TransactionForm({ editing, onSaved, onCancel, onBusyChange, busy, locked }) {
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(() => editing ? {
+    description: editing.description,
+    amount: toInputAmount(editing.amountCents),
+    type: editing.type,
+    category: editing.category || '',
+    date: toInputDate(editing.date),
+  } : emptyForm());
   const [error, setError] = useState(null);
+  const heading = useRef(null);
 
   useEffect(() => {
-    setError(null);
-    setForm(
-      editing
-        ? {
-            description: editing.description,
-            amount: toInputAmount(editing.amountCents),
-            type: editing.type,
-            category: editing.category || '',
-            date: toInputDate(editing.date),
-          }
-        : emptyForm(),
-    );
+    if (editing) heading.current?.focus();
   }, [editing]);
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
@@ -36,15 +32,15 @@ export default function TransactionForm({ editing, onSaved, onCancel, onBusyChan
     if (busy || locked) return;
     setError(null);
 
-    const amount = form.amount.trim().replace(',', '.');
-    if (!/^\d{1,9}(\.\d{1,2})?$/.test(amount) || !/[1-9]/.test(amount)) {
+    const amount = parseInputAmount(form.amount);
+    if (!amount) {
       setError({ message: 'Informe um valor positivo com até 9 dígitos inteiros e 2 casas decimais.' });
       return;
     }
 
     const payload = {
       description: form.description,
-      amount,
+      amount: amount.decimal,
       type: form.type,
       category: form.category.trim() || null,
       date: form.date,
@@ -65,7 +61,7 @@ export default function TransactionForm({ editing, onSaved, onCancel, onBusyChan
 
   return (
     <form className="panel form" onSubmit={handleSubmit} aria-labelledby="launch-heading">
-      <h2 tabIndex={-1} id="launch-heading">{editing ? `Editar lançamento #${editing.id}` : 'Novo lançamento'}</h2>
+      <h2 ref={heading} tabIndex={-1} id="launch-heading">{editing ? `Editar lançamento #${editing.id}` : 'Novo lançamento'}</h2>
 
       <fieldset className="form-fields" disabled={busy || locked}>
         <fieldset className="segmented">
@@ -98,8 +94,13 @@ export default function TransactionForm({ editing, onSaved, onCancel, onBusyChan
             <input
               value={form.amount}
               onChange={set('amount')}
+              onBlur={() => {
+                const amount = parseInputAmount(form.amount);
+                if (amount) setForm((current) => ({ ...current, amount: toInputAmount(amount.cents) }));
+              }}
               inputMode="decimal"
-              placeholder="2000,00"
+              placeholder="2.000,00"
+              maxLength={24}
               required
             />
           </label>

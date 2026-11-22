@@ -36,9 +36,9 @@ const pagination = {
   limit: z.coerce.number().int().min(1).max(100).default(20),
 };
 
-export const listQuerySchema = z.object({
-  ...pagination,
+const transactionFilters = {
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
+  q: z.string().trim().max(120).optional(),
   from: calendarDate.optional(),
   to: calendarDate.optional(),
   scope: z.enum(['all', 'mine']).default('all'),
@@ -46,12 +46,24 @@ export const listQuerySchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-}).refine(({ from, to }) => !from || !to || from <= to, {
+};
+
+const orderedPeriod = ({ from, to }) => !from || !to || from <= to;
+const periodError = {
   path: ['to'],
   message: 'A data final não pode ser anterior à inicial',
-});
+};
+
+export const listQuerySchema = z.object({ ...pagination, ...transactionFilters })
+  .refine(orderedPeriod, periodError);
+
+export const exportQuerySchema = z.object(transactionFilters).refine(orderedPeriod, periodError);
 
 export const balanceQuerySchema = z.object({ scope: z.enum(['all', 'mine']).default('all') });
+
+export const monthlyQuerySchema = balanceQuerySchema.extend({
+  month: z.string().regex(/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/, 'Informe um mês válido no formato AAAA-MM'),
+});
 
 export const auditQuerySchema = z.object({
   ...pagination,

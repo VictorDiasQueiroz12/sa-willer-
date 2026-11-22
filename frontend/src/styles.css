@@ -116,7 +116,7 @@ input:focus, select:focus { border-color: var(--action); }
 .flow-legend dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
 .flow-legend div:last-child { text-align: right; }
 
-.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--line); }
 .tabs button {
   font: inherit; font-weight: 600; padding: 0.6rem 1rem; cursor: pointer;
   background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
@@ -128,7 +128,9 @@ input:focus, select:focus { border-color: var(--action); }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; }
 .form { display: flex; flex-direction: column; gap: 0.9rem; }
 .form-fields { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; border: 0; margin: 0; padding: 0; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.row label { min-width: 0; }
+.row input { width: 100%; }
 .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 .segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; padding: 3px; margin: 0; gap: 3px; }
@@ -139,11 +141,31 @@ input:focus, select:focus { border-color: var(--action); }
 .segmented label.on.expense { background: var(--expense); }
 .segmented label.on.income { background: var(--income); }
 
-.filters { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-.filters h2 { margin-right: auto; }
+.list-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+.filter-form { display: grid; gap: 0.65rem; }
+.filter-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+.filter-fields label { min-width: 0; }
+.filter-fields input, .filter-fields select { width: 100%; }
+.filter-actions { align-items: center; }
 .check { flex-direction: row; align-items: center; gap: 0.4rem; font-weight: 500; }
-.period { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem; }
 .filter-hint { margin: 0.5rem 0 0.8rem; font-size: 0.8rem; }
+.filter-form .filter-hint { margin-top: 0; }
+.result-count { color: var(--muted); font-size: 0.8rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; }
+
+/* ---------- Resumo mensal ---------- */
+.monthly { display: grid; gap: 1rem; }
+.monthly-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 1rem; }
+.monthly-header h2 { font-size: clamp(1.35rem, 4vw, 1.85rem); margin: 0.15rem 0; }
+.monthly-header .hint, .monthly > .hint { font-size: 0.9rem; }
+.monthly h3 { font-size: 1rem; margin: 0; }
+.monthly-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin: 0; }
+.monthly-totals div { padding: 0.85rem; border-radius: 10px; background: var(--paper); }
+.monthly-totals dt { color: var(--muted); font-size: 0.82rem; font-weight: 600; }
+.monthly-totals dd { margin: 0.15rem 0 0; font-weight: 800; font-size: clamp(1rem, 2.5vw, 1.45rem); overflow-wrap: anywhere; }
+.category-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.65rem; }
+.category-list li div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.2rem 1rem; font-size: 0.9rem; overflow-wrap: anywhere; }
+.category-list strong { min-width: 0; }
+.category-list progress { width: 100%; height: 0.65rem; accent-color: var(--action); }
 
 /* ---------- Lista ---------- */
 .tx-list { list-style: none; margin: 0; padding: 0; }
@@ -177,9 +199,13 @@ input:focus, select:focus { border-color: var(--action); }
 @media (max-width: 560px) {
   .tx { grid-template-columns: 1fr auto; }
   .tx-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filter-fields label:first-child { grid-column: 1 / -1; }
+  .monthly-totals { grid-template-columns: 1fr; }
+  .tabs button { padding-inline: 0.65rem; }
 }
 @media (max-width: 370px) {
-  .row { grid-template-columns: 1fr; }
+  .row, .filter-fields { grid-template-columns: minmax(0, 1fr); }
   .panel { padding: 0.9rem; }
 }
 @media (prefers-reduced-motion: reduce) {

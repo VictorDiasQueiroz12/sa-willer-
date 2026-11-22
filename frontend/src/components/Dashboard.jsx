@@ -1,24 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
+import { todayInput } from '../format.js';
 import AuditLog from './AuditLog.jsx';
 import BalanceSummary from './BalanceSummary.jsx';
+import MonthlyReport from './MonthlyReport.jsx';
+import TransactionFilters, { EMPTY_FILTERS } from './TransactionFilters.jsx';
 import TransactionForm from './TransactionForm.jsx';
 import TransactionList from './TransactionList.jsx';
 
 const POLL_MS = 10_000;
+
+function filterParams(filters, scope, isAdmin) {
+  const query = new URLSearchParams({ scope });
+  for (const key of ['type', 'from', 'to', 'q']) {
+    if (filters[key]) query.set(key, filters[key]);
+  }
+  if (isAdmin && filters.includeDeleted) query.set('includeDeleted', 'true');
+  return query;
+}
+
+function saveCsv(blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'fintech-flow-lancamentos.csv';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const isAdmin = user.role === 'ADMIN';
 
   const [tab, setTab] = useState('transactions');
+  const [month, setMonth] = useState(() => todayInput().slice(0, 7));
   const [page, setPage] = useState(1);
-  const [type, setType] = useState('');
   const [scope, setScope] = useState(isAdmin ? 'all' : 'mine');
-  const [includeDeleted, setIncludeDeleted] = useState(false);
-  const [draftPeriod, setDraftPeriod] = useState({ from: '', to: '' });
-  const [period, setPeriod] = useState({ from: '', to: '' });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [data, setData] = useState(null);
   const [balance, setBalance] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -28,16 +49,16 @@ export default function Dashboard() {
   const [revision, setRevision] = useState(0);
   const [formBusy, setFormBusy] = useState(false);
   const [pending, setPending] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRequest = useRef(null);
   const locked = formBusy || pending;
 
   const refresh = () => setRevision((value) => value + 1);
 
   useEffect(() => {
-    const query = new URLSearchParams({ page, limit: 8, scope });
-    if (type) query.set('type', type);
-    if (period.from) query.set('from', period.from);
-    if (period.to) query.set('to', period.to);
-    if (isAdmin && includeDeleted) query.set('includeDeleted', 'true');
+    const query = filterParams(filters, scope, isAdmin);
+    query.set('page', page);
+    query.set('limit', 8);
 
     let request;
     async function load() {
@@ -65,7 +86,31 @@ export default function Dashboard() {
       clearInterval(timer);
       request?.abort();
     };
-  }, [page, type, scope, period, includeDeleted, isAdmin, revision]);
+  }, [page, filters, scope, isAdmin, revision]);
+
+  useEffect(() => () => exportRequest.current?.abort(), []);
+
+  async function downloadCsv() {
+    if (exportRequest.current) return;
+    const request = new AbortController();
+    exportRequest.current = request;
+    setExporting(true);
+    setActionError(null);
+    setNotice('');
+    try {
+      const query = filterParams(filters, scope, isAdmin);
+      const csv = await api.download(`/transactions/export?${query}`, request.signal);
+      if (!request.signal.aborted) {
+        saveCsv(csv);
+        setNotice('CSV gerado com os filtros aplicados.');
+      }
+    } catch (err) {
+      if (!request.signal.aborted) setActionError(err);
+    } finally {
+      exportRequest.current = null;
+      if (!request.signal.aborted) setExporting(false);
+    }
+  }
 
   async function changeTransaction(operation, message) {
     setPending(true);
@@ -147,24 +192,31 @@ export default function Dashboard() {
         )}
         {notice && <p className="notice" role="status">{notice}</p>}
 
-        {isAdmin && (
-          <nav className="tabs" aria-label="Seções da tesouraria">
-            <button aria-pressed={tab === 'transactions'} disabled={locked} onClick={() => setTab('transactions')}>
-              Transações
-            </button>
+        <nav className="tabs" aria-label="Seções da tesouraria">
+          <button aria-pressed={tab === 'transactions'} disabled={locked} onClick={() => setTab('transactions')}>
+            Transações
+          </button>
+          <button aria-pressed={tab === 'monthly'} disabled={locked} onClick={() => setTab('monthly')}>
+            Resumo mensal
+          </button>
+          {isAdmin && (
             <button aria-pressed={tab === 'audit'} disabled={locked} onClick={() => setTab('audit')}>
               Auditoria
             </button>
-          </nav>
-        )}
+          )}
+        </nav>
 
-        {tab === 'audit' ? (
+        {isAdmin && tab === 'audit' && (
           <section className="panel">
             <AuditLog />
           </section>
-        ) : (
+        )}
+        {tab === 'monthly' && <MonthlyReport key={scope} scope={scope} month={month} onMonthChange={setMonth} />}
+
+        <div hidden={tab !== 'transactions'}>
           <div className="grid">
             <TransactionForm
+              key={editing?.id ?? 'new'}
               editing={editing}
               onCancel={() => setEditing(null)}
               busy={formBusy}
@@ -178,60 +230,20 @@ export default function Dashboard() {
               }}
             />
 
-            <section className="panel">
-              <div className="filters">
+            <section className="panel" aria-label="Lançamentos">
+              <div className="list-header">
                 <h2>Lançamentos</h2>
-                <select
-                  aria-label="Filtrar por tipo"
-                  value={type}
-                  onChange={(e) => {
-                    setType(e.target.value);
-                      if (e.target.value !== type) resetPage();
-                  }}
-                >
-                  <option value="">Todos</option>
-                  <option value="INCOME">Entradas</option>
-                  <option value="EXPENSE">Saídas</option>
-                </select>
-                {isAdmin && (
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={includeDeleted}
-                      onChange={(e) => {
-                        setIncludeDeleted(e.target.checked);
-                        resetPage();
-                      }}
-                    />
-                    Mostrar excluídos
-                  </label>
-                )}
+                <button className="btn small" onClick={downloadCsv} disabled={exporting || !data?.total}>
+                  {exporting ? 'Gerando CSV…' : 'Exportar CSV'}
+                </button>
               </div>
-              <form className="period" onSubmit={(e) => {
-                e.preventDefault();
-                setPeriod({ ...draftPeriod });
+              <TransactionFilters filters={filters} isAdmin={isAdmin} onApply={(applied) => {
+                setFilters(applied);
                 resetPage();
-              }}>
-                <label>
-                  De
-                  <input type="date" value={draftPeriod.from} max={draftPeriod.to || undefined}
-                    onChange={(e) => setDraftPeriod({ ...draftPeriod, from: e.target.value })} />
-                </label>
-                <label>
-                  Até
-                  <input type="date" value={draftPeriod.to} min={draftPeriod.from || undefined}
-                    onChange={(e) => setDraftPeriod({ ...draftPeriod, to: e.target.value })} />
-                </label>
-                <button className="btn small">Filtrar período</button>
-                {(draftPeriod.from || draftPeriod.to || period.from || period.to) && (
-                  <button className="btn small" type="button" onClick={() => {
-                    setDraftPeriod({ from: '', to: '' });
-                    setPeriod({ from: '', to: '' });
-                    resetPage();
-                  }}>Limpar</button>
-                )}
-              </form>
-              <p className="hint filter-hint">Os filtros afetam a lista; o saldo mostra todos os lançamentos ativos da visão selecionada.</p>
+              }} />
+              {data?.total > 0 && (
+                <p className="result-count">{data.total} {data.total === 1 ? 'lançamento encontrado' : 'lançamentos encontrados'}</p>
+              )}
 
               <TransactionList
                 data={data}
@@ -245,14 +257,13 @@ export default function Dashboard() {
                 onEdit={(tx) => {
                   setEditing(tx);
                   setNotice('');
-                  document.getElementById('launch-heading')?.focus();
                 }}
                 onDelete={handleDelete}
                 onRestore={handleRestore}
               />
             </section>
           </div>
-        )}
+        </div>
       </main>
     </>
   );

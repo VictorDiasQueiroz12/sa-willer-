@@ -15,7 +15,18 @@ export function formatMoney(value) {
 
 export function toInputAmount(value) {
   const { negative, whole, fraction } = splitCents(value);
-  return `${negative ? '-' : ''}${whole},${fraction}`;
+  return `${negative ? '-' : ''}${whole.toLocaleString('pt-BR')},${fraction}`;
+}
+
+// A interface aceita o agrupamento brasileiro; a API continua recebendo decimal sem agrupamento.
+export function parseInputAmount(value) {
+  const text = value.trim().replace(/^R\$\s*/u, '');
+  const grouped = /^\d{1,3}(\.\d{3}){1,2}(,\d{1,2})?$/.test(text);
+  const normalized = (grouped ? text.replaceAll('.', '') : text).replace(',', '.');
+  if (!/^\d{1,9}(\.\d{1,2})?$/.test(normalized)) return null;
+  const [whole, fraction = ''] = normalized.split('.');
+  const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+  return cents > 0n ? { cents, decimal: `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}` } : null;
 }
 
 // Datas de lançamento são guardadas em UTC (sem hora): exibir em UTC evita "voltar um dia".
